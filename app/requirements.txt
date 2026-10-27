@@ -1,0 +1,7 @@
+torch
+diffusers
+transformers
+accelerate
+peft
+opencv-python-headless
+scikit-image
