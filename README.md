@@ -2,6 +2,10 @@
 
 AI render tools turn an interior image into a photorealistic render. Architects want the render to **keep their design**: the same walls, windows, furniture and colors. A common failure is that the model changes things it should not change.
 
+[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-md.svg)](https://huggingface.co/spaces/Mervecaliskan/keep-the-design)
+
+🚀 **Try the live demo:** [Keep the Design on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload an interior photo and change only the floor.
+
 📝 **Read the full step-by-step write-up on Medium:** [Does the AI Keep Your Design?](https://medium.com/@mervcaliskaan/does-the-ai-keep-your-design-measuring-geometry-and-color-in-stable-diffusion-interior-renders-43260ec239d3)
 
 In this project I ask for one change (*"light oak wooden floor"*) and measure how well different methods keep everything else.
@@ -16,6 +20,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **Canny kept the design better than MLSD and Depth.** MLSD invented objects, Depth lost details.
 - **Inpainting with a floor mask removed the trade-off.** Outside the floor almost nothing changed (ΔE 0.06), and the floor changed twice as much.
 - **Metric choice matters.** CLIP scores the whole image, so it missed the local floor change; ΔE inside the mask measured it better.
+- **The best method is now a live demo.** Anyone can [try it](https://huggingface.co/spaces/Mervecaliskan/keep-the-design): about 2 seconds per image on a free ZeroGPU Space.
 
 ## Experiments
 
@@ -129,6 +134,20 @@ A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C*
 <img src="exp3/exp3_comparison_3.jpg" width="100%">
 </p>
 
+## Live demo
+
+The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload a photo, choose a floor (oak, walnut, parquet, marble, concrete, terracotta) or describe your own, and the app shows the floor mask, the result and the measurements.
+
+![Before | after](app/demo_before_after.jpg)
+*Before | after: concrete floor changed to dark walnut. Outside the floor: ΔE 0.05 (nothing changed). On the floor: ΔE 19.3. Time: 2 s on GPU.*
+
+![Live demo](app/demo_screenshot.jpg)
+*The app: upload a photo, choose a floor, see the floor mask and the result.*
+
+- **Pipeline:** SegFormer finds the floor → Stable Diffusion 1.5 + Canny ControlNet repaints only the floor → the original pixels are put back outside the mask.
+- **Runs on free hardware:** on a ZeroGPU Space it uses 25 steps (about 2 s per image). Without a GPU it switches to LCM-LoRA, which needs only 6 steps, so it still runs on a CPU.
+- Code: [`app/app.py`](app/app.py)
+
 ## What went wrong and what I learned
 
 - **Problem:** with edges only, colors and materials drifted (ΔE ≈ 22): dark sofas turned white, paintings lost their colors, a fireplace became a window, and "wooden floor" was applied to the ceiling in one room.
@@ -139,6 +158,7 @@ A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C*
 - **Tried other controls:** MLSD and Depth control the image less, so they follow the prompt more but invent or lose details. For keeping a design, Canny was the safest choice.
 - **Solved with a mask:** inpainting with a segmentation mask kept everything outside the floor (ΔE 0.06) and changed the floor twice as much. The best way to keep a design is to decide *where* the model may change the image.
 - **Metric choice matters:** CLIP scores the whole image and missed the local floor change. A region-based metric (ΔE inside the mask) told the real story.
+- **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
 
@@ -159,11 +179,16 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 ## How to run
 
+**Demo:** open the [Hugging Face Space](https://huggingface.co/spaces/Mervecaliskan/keep-the-design), no setup needed.
+
+**Notebooks:**
 1. Open a notebook in Google Colab.
 2. *Runtime → Change runtime type → T4 GPU*.
 3. Run the cells in order and upload your own interior images when asked.
 
-**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, OpenCV, scikit-image, pandas, matplotlib.
+**App locally:** `pip install -r app/requirements.txt` and `python app/app.py` (a GPU is recommended).
+
+**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
