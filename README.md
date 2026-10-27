@@ -70,7 +70,7 @@ Method B has a cost: the more it keeps the original, the weaker the prompt. I te
 
 Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 
-![Control maps](results/exp2/exp2_control_maps.jpg)
+![Control maps](exp2/exp2_control_maps.jpg)
 *What the model sees: original | Canny (all edges) | MLSD (straight lines only) | Depth*
 
 | Control | SSIM ↑ | Edge recall ↑ | Line recall ↑ | Mean ΔE ↓ | CLIP gain ↑ | Sec/image |
@@ -79,7 +79,7 @@ Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 | MLSD | 0.465 | 0.854 | 0.716 | 10.8 | **2.12** | 5.5 |
 | Depth | 0.492 | 0.842 | 0.698 | 10.0 | 1.90 | 5.6 |
 
-![Original | Canny | MLSD | Depth](results/exp2/exp2_comparison_2.jpg)
+![Original | Canny | MLSD | Depth](exp2/exp2_comparison_2.jpg)
 *Original | Canny | MLSD | Depth. With MLSD and Depth, the marble island turns into wood and the fireplace changes.*
 
 - Against my expectation, **Canny kept the design best on every metric**, even on straight-line recall, where MLSD should have had an advantage.
