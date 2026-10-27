@@ -4,10 +4,18 @@ AI render tools turn an interior image into a photorealistic render. Architects 
 
 📝 **Read the full step-by-step write-up on Medium:** [Does the AI Keep Your Design?](https://medium.com/@mervcaliskaan/does-the-ai-keep-your-design-measuring-geometry-and-color-in-stable-diffusion-interior-renders-43260ec239d3)
 
-In this project I ask for one change (*"light oak wooden floor"*) and measure how well different ControlNet methods keep everything else.
+In this project I ask for one change (*"light oak wooden floor"*) and measure how well different methods keep everything else.
 
 ![Original | Method A | Method B](results/method_comparison_1.jpg)
 *Left: original. Middle: Method A (edges only), where the sofa and chairs turned white and the fireplace became a window. Right: Method B (edges + original photo), where the colors and the fireplace are kept and the floor became wood.*
+
+## Key findings
+
+- **Edges alone are not enough.** With ControlNet Canny only, colors and materials drifted (mean ΔE 21.9). Adding the original photo (img2img) cut this by 59%.
+- **img2img has a trade-off.** The more it keeps the original, the weaker the prompt. The best balance was around strength 0.6 to 0.7.
+- **Canny kept the design better than MLSD and Depth.** MLSD invented objects, Depth lost details.
+- **Inpainting with a floor mask removed the trade-off.** Outside the floor almost nothing changed (ΔE 0.06), and the floor changed twice as much.
+- **Metric choice matters.** CLIP scores the whole image, so it missed the local floor change; ΔE inside the mask measured it better.
 
 ## Experiments
 
@@ -15,6 +23,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 |---|---|---|
 | 1 | Edges only vs edges + original photo, and the `strength` trade-off | [`interior_render_preservation.ipynb`](interior_render_preservation.ipynb) |
 | 2 | Which ControlNet keeps the design best (Canny, MLSD, Depth), and simple speed settings | [`02_controlnet_types_and_speed.ipynb`](02_controlnet_types_and_speed.ipynb) |
+| 3 | Change only the floor with a segmentation mask (inpainting) | [`03_inpainting_floor_mask.ipynb`](03_inpainting_floor_mask.ipynb) |
 
 Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
 
@@ -26,6 +35,7 @@ Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Cola
 | **Edge recall** | Share of the original edges (walls, windows, furniture) that are still in the render | higher |
 | **Line recall** | Share of the original *straight* lines that are still in the render (Experiment 2) | higher |
 | **Mean ΔE (CIEDE2000)** | Average color change per pixel in CIELAB space. ΔE < 2 is hard to see, ΔE > 10 is a clear change | lower |
+| **ΔE outside / inside the mask** | Color change outside the floor (should be 0) and on the floor (the requested change) (Experiment 3) | lower / higher |
 | **CLIP score gain** | How much more the render matches *"a room with a light oak wooden floor"* than the original photo does | higher |
 | **Sec/image, peak GPU memory** | Speed and memory on a free T4 GPU (Experiment 2) | lower |
 
@@ -98,6 +108,27 @@ Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 - 15 steps gave almost the same quality in a third less time.
 - Attention slicing saved no memory here, because PyTorch 2 already uses memory-efficient attention (SDPA). It only helps on smaller GPUs or larger images, so an optimisation should be measured, not assumed.
 
+### 4. Change only the floor: inpainting with a segmentation mask
+
+A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C** repaints only this mask with Canny ControlNet and puts the original pixels back everywhere else.
+
+![Original | floor mask | Method B | Method C](exp3/exp3_comparison_2.jpg)
+*Original | floor mask (red) | Method B (img2img) | Method C (inpainting)*
+
+| Method | ΔE outside ↓ | SSIM outside ↑ | Edge recall outside ↑ | ΔE inside (floor change) ↑ | CLIP gain ↑ |
+|---|---|---|---|---|---|
+| B: img2img | 8.9 | 0.565 | 0.941 | 8.9 | **1.52** |
+| **C: inpainting** | **0.06** | **0.997** | **0.992** | **16.6** | 0.82 |
+
+- **Inpainting removed the trade-off.** Outside the floor almost nothing changed (ΔE 0.06, far below the visible limit of about 2), and the paintings stayed for the first time. The floor itself changed about twice as much as with Method B.
+- **CLIP was misleading here.** It scored Method C lower, although its floors are clearly more wooden. CLIP looks at the whole image, so Method B's wooden ceiling raised its score. For local edits, ΔE inside the mask is a better measure.
+- SegFormer found the floor well and left out the rugs. Thin objects that touch the floor, like chair legs and the lamp base, are partly inside the mask.
+
+<p>
+<img src="exp3/exp3_comparison_1.jpg" width="100%">
+<img src="exp3/exp3_comparison_3.jpg" width="100%">
+</p>
+
 ## What went wrong and what I learned
 
 - **Problem:** with edges only, colors and materials drifted (ΔE ≈ 22): dark sofas turned white, paintings lost their colors, a fireplace became a window, and "wooden floor" was applied to the ceiling in one room.
@@ -106,12 +137,15 @@ Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 - **New problem:** the prompt becomes weaker (daylight was not applied, a painting changed).
 - **Measured the trade-off:** the best balance was around strength 0.6 to 0.7.
 - **Tried other controls:** MLSD and Depth control the image less, so they follow the prompt more but invent or lose details. For keeping a design, Canny was the safest choice.
-- **Weakest point:** paintings changed their content with every method and even at strength 0.4.
+- **Solved with a mask:** inpainting with a segmentation mask kept everything outside the floor (ΔE 0.06) and changed the floor twice as much. The best way to keep a design is to decide *where* the model may change the image.
+- **Metric choice matters:** CLIP scores the whole image and missed the local floor change. A region-based metric (ΔE inside the mask) told the real story.
 
 ## Limits
 
-- Only 3 rooms and one seed. The CLIP peak at 0.7 and the method ranking need more images and seeds to confirm.
-- Mean ΔE is measured on the whole image, so it also counts the floor, which I changed on purpose.
+- Only 3 rooms and one seed. The method rankings and the CLIP peak at 0.7 need more images and seeds to confirm.
+- In Experiments 1 and 2, mean ΔE is measured on the whole image, so it also counts the floor, which I changed on purpose. Experiment 3 measures inside and outside the floor separately.
+- Experiment 2 used strength 0.6 for all control types, a value chosen for Canny in Experiment 1. MLSD and Depth may work better at a different strength.
+- In Experiment 3 the result depends on the mask: thin objects on the floor can change because they are inside it. ΔE outside is not exactly 0 because of the soft mask edge and JPEG compression.
 - One room already had a wooden floor, which lowers its CLIP gain.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
@@ -119,7 +153,8 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 ## Next steps
 
-- **Inpainting with a floor mask**, so only the requested area can change, and measuring ΔE only outside the mask. This should also protect the paintings.
+- A smaller mask margin, or excluding thin objects like chair legs from the mask.
+- Region-based prompt metrics, for example CLIP on the floor crop only.
 - More rooms and seeds, with confidence intervals.
 
 ## How to run
@@ -128,7 +163,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 2. *Runtime → Change runtime type → T4 GPU*.
 3. Run the cells in order and upload your own interior images when asked.
 
-**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), Depth Anything V2, CLIP, OpenCV, scikit-image, pandas, matplotlib.
+**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
