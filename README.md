@@ -2,6 +2,8 @@
 
 AI render tools turn an interior image into a photorealistic render. Architects want the render to **keep their design**: the same walls, windows, furniture and colors. A common failure is that the model changes things it should not change.
 
+📝 **Read the full step-by-step write-up on Medium:** [Does the AI Keep Your Design?](https://medium.com/@mervcaliskaan/does-the-ai-keep-your-design-measuring-geometry-and-color-in-stable-diffusion-interior-renders-43260ec239d3)
+
 In this project I ask for one change (*"light oak wooden floor"*) and measure how well two ControlNet methods keep everything else.
 
 ![Original | Method A | Method B](results/method_comparison_1.jpg)
