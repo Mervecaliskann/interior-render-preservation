@@ -1,0 +1,4 @@
+setting,Sec/image,Peak GPU GB,Mean ΔE ↓,CLIP gain ↑
+Baseline (25 steps),5.708,6.53,7.794,1.128
+Fewer steps (15),3.847,6.53,7.934,2.132
+Attention slicing,8.387,6.53,7.8,1.16
