@@ -8,6 +8,8 @@ AI render tools turn an interior image into a photorealistic render. Architects 
 
 📝 **Read the full step-by-step write-up on Medium:** [Does the AI Keep Your Design?](https://medium.com/@mervcaliskaan/does-the-ai-keep-your-design-measuring-geometry-and-color-in-stable-diffusion-interior-renders-43260ec239d3)
 
+ **Follow-up project:** [Japandi Style LoRA](https://github.com/Mervecaliskann/japandi-style-lora). I trained my own style LoRA and combined it with the Canny ControlNet + img2img setup from this project ([live demo](https://huggingface.co/spaces/Mervecaliskan/japandi-room-restyle)).
+
 In this project I ask for one change (*"light oak wooden floor"*) and measure how well different methods keep everything else.
 
 ![Original | Method A | Method B](results/method_comparison_1.jpg)
