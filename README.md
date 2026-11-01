@@ -23,7 +23,8 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **Inpainting with a floor mask removed the trade-off.** Outside the floor almost nothing changed (ΔE 0.06), and the floor changed twice as much.
 - **Metric choice matters.** CLIP scores the whole image, so it missed the local floor change; ΔE inside the mask measured it better.
 - **The best method is now a live demo.** Anyone can [try it](https://huggingface.co/spaces/Mervecaliskan/keep-the-design): about 2 seconds per image on a free ZeroGPU Space.
-
+- **fp16 is the big win, quantization is not (for SD 1.5).** fp16 halved memory and was 3.8× faster than fp32 at the same quality; LCM-LoRA was 4.3× faster again. 8-bit and 4-bit saved only 7–11% memory, unlike LLMs.
+- 
 ## Experiments
 
 | # | Question | Notebook |
@@ -31,6 +32,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 1 | Edges only vs edges + original photo, and the `strength` trade-off | [`interior_render_preservation.ipynb`](interior_render_preservation.ipynb) |
 | 2 | Which ControlNet keeps the design best (Canny, MLSD, Depth), and simple speed settings | [`02_controlnet_types_and_speed.ipynb`](02_controlnet_types_and_speed.ipynb) |
 | 3 | Change only the floor with a segmentation mask (inpainting) | [`03_inpainting_floor_mask.ipynb`](03_inpainting_floor_mask.ipynb) |
+| 4 | What does it cost to run, and what is lost when it runs cheaper (fp32, fp16, 8-bit, 4-bit, LCM-LoRA, CPU offload) | [`04_quantization_modest_hardware.ipynb`](04_quantization_modest_hardware.ipynb) |
 
 Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
 
@@ -136,6 +138,31 @@ A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C*
 <img src="exp3/exp3_comparison_3.jpg" width="100%">
 </p>
 
+### 5. Running it cheaper: fp16, quantization, LCM and offload
+
+The same render as Method B (3 rooms), run in six ways on a free T4 GPU.
+
+![Memory vs speed](exp4/exp4_memory_vs_speed.png)
+
+| Variant | Peak memory | Sec/image | ΔE vs fp16 ↓ | ΔE to original ↓ | Edge recall ↑ |
+|---|---|---|---|---|---|
+| fp32 | 6.38 GB | 23.3 | 10.2 | 8.7 | 0.935 |
+| **fp16** | 3.50 GB | 6.1 | 0 | 8.9 | 0.939 |
+| 8-bit UNet | 3.25 GB | 7.5 | 1.6 | 9.0 | 0.937 |
+| 4-bit UNet | 3.13 GB | 6.2 | 2.1 | 8.9 | 0.931 |
+| **fp16 + LCM-LoRA** (8 steps) | 3.61 GB | **1.4** | 8.9 | **8.5** | **0.950** |
+| fp16 + CPU offload | **2.68 GB** | 8.5 | 0 | 8.9 | 0.939 |
+
+![Original | fp32 | fp16 | 8-bit | 4-bit | LCM | offload](exp4/exp4_comparison_3.jpg)
+*Original | fp32 | fp16 | 8-bit | 4-bit | LCM | offload*
+
+- **fp16 is the big win:** half the memory and 3.8× faster than fp32, with the same design preservation, because the T4's tensor cores work in fp16.
+- **My first quality metric was wrong.** Every fp16-based variant was equally far from fp32 (ΔE ≈ 10), even plain fp16: tiny rounding differences grow over 25 denoising steps into a different but valid image. Comparing against fp16 showed the real effect of quantization.
+- **Quantization barely helps for SD 1.5.** 8-bit and 4-bit give almost the same image as fp16 (ΔE 1.6 and 2.1) but save only 7–11% memory, and 8-bit is slower. bitsandbytes quantizes only the UNet's linear layers; the ControlNet, text encoder, VAE, convolutions and activations stay in fp16. In my thesis LLMs almost all weights are linear, which is why quantization helped much more there.
+- **LCM-LoRA is the fastest:** 1.4 s per image with no loss in design preservation. It is a different image from the 25-step render, not a worse one.
+- **CPU offload needs the least GPU memory** (2.7 GB peak) and gives exactly the same image as fp16, but is 40% slower.
+- **Choice:** always fp16; LCM-LoRA for speed; CPU offload for a small GPU.
+  
 ## Live demo
 
 The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload a photo, choose a floor (oak, walnut, parquet, marble, concrete, terracotta) or describe your own, and the app shows the floor mask, the result and the measurements.
@@ -190,7 +217,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 **App locally:** `pip install -r app/requirements.txt` and `python app/app.py` (a GPU is recommended).
 
-**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), OpenCV, scikit-image, pandas, matplotlib.
+**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
