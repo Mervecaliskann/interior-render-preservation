@@ -28,6 +28,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **Automatic failure checks need human calibration.** On 25 labeled renders, the color detector was reliable (precision 1.00, recall 0.93), but the object detector raised 18 alarms for 8 real cases and the artwork detector missed 9 of 12 changed paintings.
 - **Upscale faithfully by default.** Real-ESRGAN was the most faithful upscaler (best LPIPS 0.205) and 12× faster than the SD x4 upscaler, which looked sharper but invented details such as knitted cushion textures. PSNR even ranked plain bicubic first.
 - **A bigger model is not better on every axis.** SD 1.5 kept edges more strictly (edge recall 0.96 vs 0.89), while SDXL at 1024 px kept colors and paintings better (ΔE 7.0 vs 9.5) and followed the prompt twice as well, at 2.7× the time and 3× the memory. At 768 px SDXL was worse than SD 1.5, so resolution matters as much as the model.
+- **Still to video: more motion, less control.** Stable Video Diffusion kept the rooms recognisable and mostly moved the camera, but it already changed the first frame (ΔE 4.7 to 6.5) and its higher motion setting flickered twice as much as a depth-parallax baseline. My drift metric could not separate large camera moves from real design changes.
 
 ## Experiments
 
@@ -41,6 +42,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 6 | Can render failures be found automatically, and how well do the detectors agree with a human? | [`06_failure_set_triage.ipynb`](06_failure_set_triage.ipynb) |
 | 7 | How do upscalers compare, and do they invent details? (bicubic, Real-ESRGAN, SD x4 upscaler, ESRGAN + SD refine) | [`07_upscaling.ipynb`](07_upscaling.ipynb) |
 | 8 | Does a newer, larger model (SDXL) keep the design better than SD 1.5, and what does it cost? | [`08_sd15_vs_sdxl.ipynb`](08_sd15_vs_sdxl.ipynb) |
+| 9 | Turning a still render into a short video: does the design stay the same over time? | [`09_still_to_video.ipynb`](09_still_to_video.ipynb) |
 
 **Where the outputs are:**
 
@@ -54,6 +56,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | [`exp6/`](exp6/) | Experiment 6 (failure set, detectors, human labels) |
 | [`exp7/`](exp7/) | Experiment 7 (upscaling) |
 | [`exp8/`](exp8/) | Experiment 8 (SD 1.5 vs SDXL) |
+| [`exp9/`](exp9/) | Experiment 9 (still to video) |
 | [`app/`](app/) | The Gradio demo and its screenshots |
 
 Setup for Experiments 1 to 7: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
@@ -323,6 +326,38 @@ All outputs were resized to 768×432 before measuring, so every variant is compa
 - **The cost:** SDXL at 1024 was 2.7× slower and needed 3× the memory, using most of the T4's 15 GB.
 - **What "better" means depends on the task:** lines and layout favour SD 1.5; materials, colors and artwork favour SDXL.
 
+
+### Experiment 9: From a still render to a short video
+
+Render tools now turn a still render into a short clip with a slow camera move. Video models generate many connected frames, and the risk is that the design **drifts** over time. I turned three rooms into 25-frame clips (about 3.5 s) in three ways:
+
+- **A: Depth parallax:** no generative model; Depth Anything V2 estimates depth and the image is warped so near objects move more than far ones
+- **B: Stable Video Diffusion (img2vid-xt), low motion** (`motion_bucket_id` 40)
+- **C: Stable Video Diffusion, default motion** (`motion_bucket_id` 127)
+
+Because the camera moves, frames cannot be compared pixel by pixel. I estimated the motion between frames with optical flow, warped the frames back onto each other, and measured flicker (change between neighbouring frames that motion does not explain) and drift (change from the first to the last frame).
+
+![Still to video: A | B | C](exp9/exp9_room3_compare.gif)
+*The same render as a video: depth parallax | SVD low motion | SVD default motion. With the default motion, the camera moves strongly towards the sofa.*
+
+![Still to video metrics](exp9/exp9_video.png)
+
+| Method | Motion (px/frame) | Flicker ΔE ↓ | Drift ΔE ↓ | Drift edge recall ↑ | First frame ΔE ↓ | Sec/video | Peak memory |
+|---|---|---|---|---|---|---|---|
+| A: Depth parallax | 0.34 | **1.0** | **2.2** | **0.90** | **0** | **0.8** | – |
+| B: SVD, low motion | 1.09 | 1.8 | 10.8 | 0.73 | 4.7 | 392 | 9.1 GB |
+| C: SVD, default motion | **2.73** | 2.0 | 19.0 | 0.46 | 6.5 | 387 | 9.1 GB |
+
+![First, middle and last frame](exp9/exp9_room3_frames.jpg)
+*Rows: A, B, C. Columns: first, middle and last frame. With the default motion, SVD moves the camera strongly towards the sofa; the lamp, the painting and the furniture stay recognisable.*
+
+- **SVD kept the rooms recognisable.** Looking at the frames, most of the change is camera movement: the lamp, the painting, the marble island and the furniture stay the same type and in the same place. Smaller changes appear as the camera moves, such as the shape of a sofa and the objects on a shelf.
+- **It already changes the first frame** (ΔE 4.7 to 6.5): the clip does not start exactly from the user's render.
+- **More motion means more flicker:** the default motion setting moved 2.5× more than low motion and flickered twice as much as the parallax baseline.
+- **My drift metric was not reliable for large camera moves.** Drift ΔE (19.0) and edge recall (0.46) for the default motion look like strong design changes, but the frames show that the camera moved a lot and parts of the room left the frame, which optical flow cannot align. The numbers mix camera motion and design change, so they need the frames next to them.
+- **Depth parallax is faithful and fast but barely moves** (0.34 px per frame, 0.8 s per clip): with my settings the camera move is too small to feel like a video.
+- **The cost:** each SVD clip took about 6.5 minutes on a T4 with CPU offload and 9.1 GB of GPU memory.
+
 ## Live demo
 
 The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload a photo, choose a floor (oak, walnut, parquet, marble, concrete, terracotta) or describe your own, and the app shows the floor mask, the result and the measurements.
@@ -351,6 +386,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - **Automatic checks must be checked too:** a detector can rank settings correctly and still be wrong on most single cases. Comparing it with human labels showed which detectors to trust (Experiment 6).
 - **Sharper is not better:** the sharpest upscaler invented details that no metric caught; a faithful default and zoomed visual checks matter more (Experiment 7).
 - **A newer model is a trade-off, not an upgrade:** SDXL kept colors and artwork better but edges less strictly, cost 3× the memory, and needed its native resolution to help at all (Experiment 8).
+- **A metric that mixes two things cannot judge either:** for video, my drift numbers mixed camera motion with design change; the frames showed that SVD mostly moved the camera (Experiment 9).
 - **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
@@ -364,6 +400,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - In Experiment 6, the human labels are from one person (me), on 25 renders from five rooms and one seed. The detector thresholds are first guesses, and ΔE on the whole image also counts the floor, which img2img changes on purpose.
 - In Experiment 7, the low-resolution inputs were made by shrinking real photos with bicubic resizing; real renders can have other kinds of blur and noise. The diffusion methods were run with one prompt and one setting.
 - In Experiment 8, the ControlNet scale (1.0) and strength (0.6) were chosen for SD 1.5 in Experiment 1; the SDXL Canny ControlNet may follow edges more closely at a higher scale, so part of the edge gap could be a tuning effect. Measuring at 768×432 hides some of SDXL's extra detail.
+- In Experiment 9, three rooms and one seed were used. Optical flow fails on large camera moves, plain walls and reflections, so the drift numbers overstate design change for SVD with high motion. SVD chooses its own camera motion, so the methods do not move the camera in the same way, and the parallax setting moved the camera only slightly.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
 All results are reproducible: running the notebooks again with seed 42 gives the same images and numbers.
@@ -387,7 +424,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 **App locally:** `pip install -r app/requirements.txt` and `python app/app.py` (a GPU is recommended).
 
-**Tech:** Python, PyTorch, SDXL, Real-ESRGAN (spandrel), LPIPS, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
+**Tech:** Python, PyTorch, SDXL, Stable Video Diffusion, optical flow (OpenCV), Real-ESRGAN (spandrel), LPIPS, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
