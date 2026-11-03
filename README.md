@@ -25,6 +25,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **The best method is now a live demo.** Anyone can [try it](https://huggingface.co/spaces/Mervecaliskan/keep-the-design): about 2 seconds per image on a free ZeroGPU Space.
 - **fp16 is the big win, quantization is not (for SD 1.5).** fp16 halved memory and was 3.8× faster than fp32 at the same quality; LCM-LoRA was 4.3× faster again. 8-bit and 4-bit saved only 7–11% memory, unlike LLMs.
 - **A paint code cannot be given as text.** Asking for a HEX code left the walls almost unchanged (ΔE 26.4) and a color name missed too (ΔE 19.9). Filling the walls with the exact color before generation brought them close (ΔE 3.9), and a simple color correction afterwards put all 15 cases under ΔE 5 (mean 2.1).
+- **Automatic failure checks need human calibration.** On 25 labeled renders, the color detector was reliable (precision 1.00, recall 0.93), but the object detector raised 18 alarms for 8 real cases and the artwork detector missed 9 of 12 changed paintings.
 
 ## Experiments
 
@@ -35,6 +36,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 3 | Change only the floor with a segmentation mask (inpainting) | [`03_inpainting_floor_mask.ipynb`](03_inpainting_floor_mask.ipynb) |
 | 4 | What does it cost to run, and what is lost when it runs cheaper (fp32, fp16, 8-bit, 4-bit, LCM-LoRA, CPU offload) | [`04_quantization_modest_hardware.ipynb`](04_quantization_modest_hardware.ipynb) |
 | 5 | Can the model paint a wall in an exact paint code (RAL / HEX)? | [`05_color_accuracy_ral_hex.ipynb`](05_color_accuracy_ral_hex.ipynb) |
+| 6 | Can render failures be found automatically, and how well do the detectors agree with a human? | [`06_failure_set_triage.ipynb`](06_failure_set_triage.ipynb) |
 
 **Where the outputs are:**
 
@@ -45,6 +47,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | [`exp3/`](exp3/) | Experiment 3 (floor mask, inpainting) |
 | [`exp4/`](exp4/) | Experiment 4 (fp16, quantization, LCM, offload) |
 | [`exp5/`](exp5/) | Experiment 5 (RAL / HEX wall colors) |
+| [`exp6/`](exp6/) | Experiment 6 (failure set, detectors, human labels) |
 | [`app/`](app/) | The Gradio demo and its screenshots |
 
 Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
@@ -62,6 +65,7 @@ Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Cola
 | **Sec/image, peak GPU memory** | Speed and memory on a free T4 GPU (Experiment 2) | lower |
 | **ΔE to target color** | Distance between the mean wall color and the requested paint color (Experiment 5) | lower |
 | **Hit rate** | Share of room × color cases with ΔE to target below 5 (Experiment 5) | higher |
+| **Precision / recall of a detector** | Precision: share of its alarms that were real failures. Recall: share of the real failures it caught (Experiment 6, against my labels) | higher |
 
 ## Results
 
@@ -207,6 +211,42 @@ Architects order paint by code. If a user asks for *"walls in RAL 7016"*, the re
 - **The color has to be given as pixels.** Starting from walls filled with the exact color (C) put 12 of 15 cases under ΔE 5. All 3 misses were in the open-plan room, where the wall mask also covered wood paneling and parts of the ceiling (mean ΔE 5.6 there, 3.0 in the other two rooms).
 - **A cheap correction closes the gap.** Shifting the mean color (D) put all 15 cases under ΔE 5 and most near the hard-to-see level (ΔE 2). This is a post-processing step of a few lines, with no extra model. It helped most where C was furthest off (open-plan room: 5.6 → 1.8); in one case (room 3, beige red) C was already closer than D.
 - **Honest note on D:** the metric compares the mean wall color with the target, and D moves exactly this mean, so its low ΔE is partly guaranteed by design. It shows that a simple correction is enough to hit the code, not that the image looks more realistic; that needs a separate check, such as human ratings.
+
+### Experiment 6: A failure set and automatic triage
+
+In the earlier experiments I found failures **by looking**. A product team needs this automatically: every time a model or setting changes, run a fixed set of renders and see which failures got better or worse. I built such a check and tested it against my own judgment.
+
+- **Failure set:** 5 rooms × 5 settings that fail in different ways (`canny_only`, `img2img` at strength 0.5 / 0.7 / 0.9, `inpaint_floor`) = 25 renders.
+- **Detectors:** one per failure type: color shift (ΔE), lost structure (edge recall), bent lines (line recall), window and artwork changes (IoU of SegFormer masks), invented or removed objects (object classes that appear or disappear) and layout changes.
+- **Human labels:** I looked at every render next to its original at full size and marked the failures I could see.
+
+![Failure flags by setting](exp6/exp6_failures_by_setting.png)
+
+**The detectors ranked the settings correctly.** `inpaint_floor` had the fewest flags (0.2 per render) and `canny_only` the most (2.6), the same order I found by looking in Experiments 1 to 3.
+
+**But single failure types were not equally reliable:**
+
+| Detector | Failures I saw | Alarms | Both | Precision | Recall |
+|---|---|---|---|---|---|
+| **Color shift** | 15 | 14 | 14 | **1.00** | **0.93** |
+| **Lost structure** | 1 | 1 | 1 | 1.00 | 1.00 |
+| Invented or removed objects | 8 | 18 | 8 | 0.44 | 1.00 |
+| Artwork changed | 12 | 5 | 3 | 0.60 | **0.25** |
+| Window changed | 1 | 0 | 0 | – | 0.00 |
+| Bent lines | 0 | 3 | 0 | 0.00 | – |
+| Layout changed | 0 | 1 | 0 | 0.00 | – |
+
+![Worst render: fireplace room, canny only](exp6/exp6_worst_room3__canny_only.jpg)
+*Fireplace room, `canny_only`: the TV became a white panel, a new window appeared and the rug disappeared. The detectors caught the color shift, the panel and the rug, but missed the window and reported a layout change that did not happen.*
+
+![Open-plan room, img2img 0.9](exp6/exp6_worst_room4__img2img_0.9.jpg)
+*Open-plan room, `img2img_0.9`: the marble island turned into wood and the fireplace into a white box. The object detector reported "kitchen island removed": the right render, but the wrong reason.*
+
+- **Color shift can be trusted:** no false alarms, and the only miss was a ceiling that turned into wood while the whole-image ΔE (8.9) stayed under the threshold of 10.
+- **The object detector is an alarm, not an answer.** It never missed a real case, but more than half of its alarms were false. The segmentation model gives the same object different names in the two images: one painting was called "mirror" in the original and "painting" in the render. In 4 of its 8 correct alarms it named the wrong object.
+- **The artwork detector gives false confidence.** It caught only 3 of 12 changed paintings, because it checks *where* a painting is, not *what* is in it. A painting that stays in place but changes its content passes.
+- **The overall agreement (85%) hides all of this,** because most render × failure pairs are "no failure" for both me and the detectors. Per-type precision and recall tell the real story.
+- **Labeling needs care too.** My first labels from small grids changed for 9 of the 25 renders after I checked them at full size (a ceiling turned into wood, an armchair became a table). Small changes in shape (leaves, vases) were not counted.
   
 ## Live demo
 
@@ -233,6 +273,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - **Solved with a mask:** inpainting with a segmentation mask kept everything outside the floor (ΔE 0.06) and changed the floor twice as much. The best way to keep a design is to decide *where* the model may change the image.
 - **Metric choice matters:** CLIP scores the whole image and missed the local floor change. A region-based metric (ΔE inside the mask) told the real story.
 - **Text is not enough for exact colors:** a prompt can describe a color but not hit a paint code. Giving the color as pixels and correcting it afterwards worked (Experiment 5).
+- **Automatic checks must be checked too:** a detector can rank settings correctly and still be wrong on most single cases. Comparing it with human labels showed which detectors to trust (Experiment 6).
 - **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
@@ -243,6 +284,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - In Experiment 3 the result depends on the mask: thin objects on the floor can change because they are inside it. ΔE outside is not exactly 0 because of the soft mask edge and JPEG compression.
 - One room already had a wooden floor, which lowers its CLIP gain.
 - In Experiment 5, RAL→sRGB values are approximations and a wall under real light is not a paint chip, so ΔE also includes lighting. Two rooms have little visible wall (17%), the wall mask covered wood paneling in one room and spilled onto the ceiling in another, and the realism of method D was not rated.
+- In Experiment 6, the human labels are from one person (me), on 25 renders from five rooms and one seed. The detector thresholds are first guesses, and ΔE on the whole image also counts the floor, which img2img changes on purpose.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
 All results are reproducible: running the notebooks again with seed 42 gives the same images and numbers.
@@ -253,6 +295,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 - Region-based prompt metrics, for example CLIP on the floor crop only.
 - More rooms and seeds, with confidence intervals.
 - Human ratings of realism for the color methods, and a correction that adapts to uneven light instead of shifting only the mean.
+- Better detectors for Experiment 6: compare the *content* of each painting (color or CLIP similarity inside its mask) instead of its position, and merge segmentation classes that are often confused (painting / mirror, sofa / armchair).
 
 ## How to run
 
