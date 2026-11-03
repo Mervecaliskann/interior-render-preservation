@@ -1,0 +1,26 @@
+,0
+room1__canny_only,"color_shift, artwork_changed"
+room1__img2img_0.5,artwork_changed
+room1__img2img_0.7,"color_shift, artwork_changed"
+room1__img2img_0.9,"color_shift, artwork_changed, invented_or_removed"
+room1__inpaint_floor,
+room2__canny_only,"color_shift, artwork_changed"
+room2__img2img_0.5,artwork_changed
+room2__img2img_0.7,"color_shift, artwork_changed"
+room2__img2img_0.9,"color_shift, artwork_changed"
+room2__inpaint_floor,
+room3__canny_only,"color_shift, window_changed, artwork_changed, invented_or_removed"
+room3__img2img_0.5,
+room3__img2img_0.7,"color_shift, invented_or_removed"
+room3__img2img_0.9,"color_shift, invented_or_removed"
+room3__inpaint_floor,
+room4__canny_only,"color_shift, lost_structure, invented_or_removed"
+room4__img2img_0.5,
+room4__img2img_0.7,"color_shift, invented_or_removed"
+room4__img2img_0.9,"color_shift, invented_or_removed"
+room4__inpaint_floor,
+room5__canny_only,"color_shift, artwork_changed, invented_or_removed"
+room5__img2img_0.5,
+room5__img2img_0.7,"color_shift, artwork_changed"
+room5__img2img_0.9,"color_shift, artwork_changed"
+room5__inpaint_floor,
