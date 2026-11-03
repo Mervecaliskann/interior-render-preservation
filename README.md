@@ -24,7 +24,8 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **Metric choice matters.** CLIP scores the whole image, so it missed the local floor change; ΔE inside the mask measured it better.
 - **The best method is now a live demo.** Anyone can [try it](https://huggingface.co/spaces/Mervecaliskan/keep-the-design): about 2 seconds per image on a free ZeroGPU Space.
 - **fp16 is the big win, quantization is not (for SD 1.5).** fp16 halved memory and was 3.8× faster than fp32 at the same quality; LCM-LoRA was 4.3× faster again. 8-bit and 4-bit saved only 7–11% memory, unlike LLMs.
-- 
+- **A paint code cannot be given as text.** Asking for a HEX code left the walls almost unchanged (ΔE 26.4) and a color name missed too (ΔE 19.9). Filling the walls with the exact color before generation brought them close (ΔE 3.9), and a simple color correction afterwards put all 15 cases under ΔE 5 (mean 2.1).
+
 ## Experiments
 
 | # | Question | Notebook |
@@ -33,6 +34,18 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 2 | Which ControlNet keeps the design best (Canny, MLSD, Depth), and simple speed settings | [`02_controlnet_types_and_speed.ipynb`](02_controlnet_types_and_speed.ipynb) |
 | 3 | Change only the floor with a segmentation mask (inpainting) | [`03_inpainting_floor_mask.ipynb`](03_inpainting_floor_mask.ipynb) |
 | 4 | What does it cost to run, and what is lost when it runs cheaper (fp32, fp16, 8-bit, 4-bit, LCM-LoRA, CPU offload) | [`04_quantization_modest_hardware.ipynb`](04_quantization_modest_hardware.ipynb) |
+| 5 | Can the model paint a wall in an exact paint code (RAL / HEX)? | [`05_color_accuracy_ral_hex.ipynb`](05_color_accuracy_ral_hex.ipynb) |
+
+**Where the outputs are:**
+
+| Folder | Outputs of |
+|---|---|
+| [`results/`](results/) | Experiment 1 (Method A vs B, strength sweep) |
+| [`exp2/`](exp2/) | Experiment 2 (ControlNet types, speed) |
+| [`exp3/`](exp3/) | Experiment 3 (floor mask, inpainting) |
+| [`exp4/`](exp4/) | Experiment 4 (fp16, quantization, LCM, offload) |
+| [`exp5/`](exp5/) | Experiment 5 (RAL / HEX wall colors) |
+| [`app/`](app/) | The Gradio demo and its screenshots |
 
 Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
 
@@ -47,10 +60,12 @@ Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Cola
 | **ΔE outside / inside the mask** | Color change outside the floor (should be 0) and on the floor (the requested change) (Experiment 3) | lower / higher |
 | **CLIP score gain** | How much more the render matches *"a room with a light oak wooden floor"* than the original photo does | higher |
 | **Sec/image, peak GPU memory** | Speed and memory on a free T4 GPU (Experiment 2) | lower |
+| **ΔE to target color** | Distance between the mean wall color and the requested paint color (Experiment 5) | lower |
+| **Hit rate** | Share of room × color cases with ΔE to target below 5 (Experiment 5) | higher |
 
 ## Results
 
-### 1. Method A vs Method B (3 rooms)
+### Experiment 1a: Method A vs Method B (3 rooms)
 
 | Method | What the model gets | SSIM ↑ | Edge recall ↑ | Mean ΔE ↓ |
 |---|---|---|---|---|
@@ -64,7 +79,7 @@ Method B was better on every metric and on every room. Adding the original photo
 <img src="results/method_comparison_3.jpg" width="100%">
 </p>
 
-### 2. The strength trade-off
+### Experiment 1b: The strength trade-off
 
 Method B has a cost: the more it keeps the original, the weaker the prompt. I tested `strength` from 0.4 to 0.8.
 
@@ -85,7 +100,7 @@ Method B has a cost: the more it keeps the original, the weaker the prompt. I te
 ![Original | 0.4 | 0.6 | 0.8](results/strength_sweep_1.jpg)
 *Original | strength 0.4 | 0.6 | 0.8. At 0.8 the marble island becomes wood.*
 
-### 3. Which ControlNet keeps the design best? Canny vs MLSD vs Depth
+### Experiment 2: Which ControlNet keeps the design best? Canny vs MLSD vs Depth
 
 Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 
@@ -117,7 +132,7 @@ Same setup as Method B (img2img, strength 0.6). Only the control image changes.
 - 15 steps gave almost the same quality in a third less time.
 - Attention slicing saved no memory here, because PyTorch 2 already uses memory-efficient attention (SDPA). It only helps on smaller GPUs or larger images, so an optimisation should be measured, not assumed.
 
-### 4. Change only the floor: inpainting with a segmentation mask
+### Experiment 3: Change only the floor with a segmentation mask
 
 A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C** repaints only this mask with Canny ControlNet and puts the original pixels back everywhere else.
 
@@ -138,7 +153,7 @@ A segmentation model (SegFormer, trained on ADE20K) finds the floor. **Method C*
 <img src="exp3/exp3_comparison_3.jpg" width="100%">
 </p>
 
-### 5. Running it cheaper: fp16, quantization, LCM and offload
+### Experiment 4: Running it cheaper: fp16, quantization, LCM and offload
 
 The same render as Method B (3 rooms), run in six ways on a free T4 GPU.
 
@@ -162,6 +177,36 @@ The same render as Method B (3 rooms), run in six ways on a free T4 GPU.
 - **LCM-LoRA is the fastest:** 1.4 s per image with no loss in design preservation. It is a different image from the 25-step render, not a worse one.
 - **CPU offload needs the least GPU memory** (2.7 GB peak) and gives exactly the same image as fp16, but is 40% slower.
 - **Choice:** always fp16; LCM-LoRA for speed; CPU offload for a small GPU.
+
+### Experiment 5: Hitting an exact paint color (RAL and HEX codes)
+
+Architects order paint by code. If a user asks for *"walls in RAL 7016"*, the render should show that color, not just "some grey". SegFormer finds the walls, and each room's walls are repainted in 5 RAL colors (3 rooms × 5 colors = 15 cases) with four methods:
+
+- **A: color name** in the prompt (*"walls painted in anthracite grey"*), walls repainted from scratch
+- **B: HEX code** in the prompt (*"walls painted in color #383E42"*)
+- **C: color-filled start:** the walls are filled with the exact color first, then the model adds light and texture (strength 0.6)
+- **D: C + correction:** the mean wall color of C is shifted to the target in CIELAB; each pixel keeps its difference from the mean, so shading and texture stay
+
+![Color accuracy](exp5/exp5_color_accuracy.png)
+
+| Method | ΔE to target ↓ | Δab (hue/chroma) ↓ | Hit rate (ΔE < 5) ↑ | ΔE outside the walls ↓ |
+|---|---|---|---|---|
+| A: color name | 19.9 | 19.8 | 0 / 15 | 0.17 |
+| B: HEX code | 26.4 | 25.2 | 0 / 15 | 0.17 |
+| C: color-filled start | 3.9 | 4.6 | 12 / 15 | 0.17 |
+| **D: C + correction** | **2.1** | **2.6** | **15 / 15** | 0.17 |
+
+![Swatch | original | A | B | C | D](exp5/exp5_room1_color1.jpg)
+*RAL 7016 Anthracite grey in the warm-lit room: swatch | original | A | B | C | D. B leaves the walls unchanged, C turns teal under the warm light, D brings it back to grey.*
+
+![Swatch | original | A | B | C | D](exp5/exp5_room3_color5.jpg)
+*RAL 3012 Beige red: A paints a saturated red patch, B changes nothing, C and D hit the color. The wall mask spilled onto the ceiling, so the ceiling was repainted too.*
+
+- **The model does not understand color codes.** With a HEX code the walls mostly kept their original color, and in one room a green code produced red patches. It reads `#89AC76` as text, not as a color.
+- **A color name gets only the direction.** No case came within ΔE 5, parts of the wall often stayed unpainted, and *"beige red terracotta"* became a saturated red.
+- **The color has to be given as pixels.** Starting from walls filled with the exact color (C) put 12 of 15 cases under ΔE 5. The remaining drift came from light: in the warm evening room, anthracite grey turned teal.
+- **A cheap correction closes the gap.** Shifting the mean color (D) put all 15 cases under ΔE 5 and most near the hard-to-see level (ΔE 2). This is a post-processing step of a few lines, with no extra model.
+- **Honest note on D:** the metric compares the mean wall color with the target, and D moves exactly this mean, so its low ΔE is partly guaranteed by design. It shows that a simple correction is enough to hit the code, not that the image looks more realistic; that needs a separate check, such as human ratings.
   
 ## Live demo
 
@@ -187,6 +232,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - **Tried other controls:** MLSD and Depth control the image less, so they follow the prompt more but invent or lose details. For keeping a design, Canny was the safest choice.
 - **Solved with a mask:** inpainting with a segmentation mask kept everything outside the floor (ΔE 0.06) and changed the floor twice as much. The best way to keep a design is to decide *where* the model may change the image.
 - **Metric choice matters:** CLIP scores the whole image and missed the local floor change. A region-based metric (ΔE inside the mask) told the real story.
+- **Text is not enough for exact colors:** a prompt can describe a color but not hit a paint code. Giving the color as pixels and correcting it afterwards worked (Experiment 5).
 - **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
@@ -196,6 +242,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - Experiment 2 used strength 0.6 for all control types, a value chosen for Canny in Experiment 1. MLSD and Depth may work better at a different strength.
 - In Experiment 3 the result depends on the mask: thin objects on the floor can change because they are inside it. ΔE outside is not exactly 0 because of the soft mask edge and JPEG compression.
 - One room already had a wooden floor, which lowers its CLIP gain.
+- In Experiment 5, RAL→sRGB values are approximations and a wall under real light is not a paint chip, so ΔE also includes lighting. Two rooms have little visible wall (17%), the wall mask covered wood paneling in one room and spilled onto the ceiling in another, and the realism of method D was not rated.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
 All results are reproducible: running the notebooks again with seed 42 gives the same images and numbers.
@@ -205,6 +252,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 - A smaller mask margin, or excluding thin objects like chair legs from the mask.
 - Region-based prompt metrics, for example CLIP on the floor crop only.
 - More rooms and seeds, with confidence intervals.
+- Human ratings of realism for the color methods, and a correction that adapts to uneven light instead of shifting only the mean.
 
 ## How to run
 
