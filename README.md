@@ -27,6 +27,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **A paint code cannot be given as text.** Asking for a HEX code left the walls almost unchanged (ΔE 26.4) and a color name missed too (ΔE 19.9). Filling the walls with the exact color before generation brought them close (ΔE 3.9), and a simple color correction afterwards put all 15 cases under ΔE 5 (mean 2.1).
 - **Automatic failure checks need human calibration.** On 25 labeled renders, the color detector was reliable (precision 1.00, recall 0.93), but the object detector raised 18 alarms for 8 real cases and the artwork detector missed 9 of 12 changed paintings.
 - **Upscale faithfully by default.** Real-ESRGAN was the most faithful upscaler (best LPIPS 0.205) and 12× faster than the SD x4 upscaler, which looked sharper but invented details such as knitted cushion textures. PSNR even ranked plain bicubic first.
+- **A bigger model is not better on every axis.** SD 1.5 kept edges more strictly (edge recall 0.96 vs 0.89), while SDXL at 1024 px kept colors and paintings better (ΔE 7.0 vs 9.5) and followed the prompt twice as well, at 2.7× the time and 3× the memory. At 768 px SDXL was worse than SD 1.5, so resolution matters as much as the model.
 
 ## Experiments
 
@@ -39,6 +40,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 5 | Can the model paint a wall in an exact paint code (RAL / HEX)? | [`05_color_accuracy_ral_hex.ipynb`](05_color_accuracy_ral_hex.ipynb) |
 | 6 | Can render failures be found automatically, and how well do the detectors agree with a human? | [`06_failure_set_triage.ipynb`](06_failure_set_triage.ipynb) |
 | 7 | How do upscalers compare, and do they invent details? (bicubic, Real-ESRGAN, SD x4 upscaler, ESRGAN + SD refine) | [`07_upscaling.ipynb`](07_upscaling.ipynb) |
+| 8 | Does a newer, larger model (SDXL) keep the design better than SD 1.5, and what does it cost? | [`08_sd15_vs_sdxl.ipynb`](08_sd15_vs_sdxl.ipynb) |
 
 **Where the outputs are:**
 
@@ -51,9 +53,10 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | [`exp5/`](exp5/) | Experiment 5 (RAL / HEX wall colors) |
 | [`exp6/`](exp6/) | Experiment 6 (failure set, detectors, human labels) |
 | [`exp7/`](exp7/) | Experiment 7 (upscaling) |
+| [`exp8/`](exp8/) | Experiment 8 (SD 1.5 vs SDXL) |
 | [`app/`](app/) | The Gradio demo and its screenshots |
 
-Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
+Setup for Experiments 1 to 7: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
 
 ## How I measure
 
@@ -289,6 +292,37 @@ To measure this fairly, I used sharp interior photos (1280×768) as the **ground
 - **PSNR was misleading:** it ranked the blurry bicubic result first, because blur stays close to the average pixel value.
 - **No metric caught the invented details.** I expected a sharpness ratio above 1 to reveal invented texture, but no method reached the real image's sharpness. Only the zoomed crops showed what changed, the same lesson as Experiment 6.
 
+
+### Experiment 8: SD 1.5 vs SDXL
+
+All experiments above used **Stable Diffusion 1.5** (2022, trained at 512 px). Current render tools use newer, larger models. **SDXL** (2023) has a UNet about three times larger, two text encoders and was trained at 1024 px. Does it keep the design better with the same setup (Canny ControlNet + img2img, strength 0.6), and what does it cost on a free T4?
+
+- **A: SD 1.5 at 768×432:** the setup of my earlier experiments
+- **B: SDXL at 768×432:** same size, different model (the effect of the model)
+- **C: SDXL at 1024×576:** close to SDXL's native size (the effect of resolution)
+
+All outputs were resized to 768×432 before measuring, so every variant is compared with the same original. Five rooms, same prompt, seed, steps and ControlNet scale.
+
+![SD 1.5 vs SDXL](exp8/exp8_sd15_vs_sdxl.png)
+
+| Variant | Edge recall ↑ | SSIM ↑ | ΔE ↓ | CLIP gain ↑ | Sec/image | Peak memory |
+|---|---|---|---|---|---|---|
+| A: SD 1.5 (768) | **0.957** | 0.538 | 9.5 | 0.83 | **5.0** | **3.8 GB** |
+| B: SDXL (768) | 0.876 | 0.624 | 8.3 | 0.59 | 8.5 | 10.5 GB |
+| **C: SDXL (1024)** | 0.894 | **0.689** | **7.0** | **1.75** | 13.4 | 11.1 GB |
+
+![Original | SD 1.5 | SDXL 768 | SDXL 1024](exp8/exp8_room2_crops.jpg)
+*Original | SD 1.5 | SDXL at 768 | SDXL at 1024. SD 1.5 turned the sunflower drawing into a branch; SDXL at 1024 kept it closest to the original.*
+
+![Original | SD 1.5 | SDXL 768 | SDXL 1024](exp8/exp8_room1_crops.jpg)
+*SD 1.5 keeps the shelf lines but changes the objects and turns the door into a staircase; SDXL at 1024 keeps the objects closest, but adds a plant to the table.*
+
+- **SD 1.5 keeps geometry more strictly.** It had the best edge recall in all five rooms, because its Canny ControlNet follows the edge map very closely. But it changed colors and small objects most.
+- **SDXL at its native size keeps colors, objects and artwork better** (best SSIM and ΔE) and followed the prompt twice as well. It still invented some things (a plant on a table, a dark cushion turned green), and in one room it did not change the floor at all.
+- **SDXL below its native size lost its advantage:** at 768 it was worse than SD 1.5 on edges and prompt match.
+- **The cost:** SDXL at 1024 was 2.7× slower and needed 3× the memory, using most of the T4's 15 GB.
+- **What "better" means depends on the task:** lines and layout favour SD 1.5; materials, colors and artwork favour SDXL.
+
 ## Live demo
 
 The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload a photo, choose a floor (oak, walnut, parquet, marble, concrete, terracotta) or describe your own, and the app shows the floor mask, the result and the measurements.
@@ -316,6 +350,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - **Text is not enough for exact colors:** a prompt can describe a color but not hit a paint code. Giving the color as pixels and correcting it afterwards worked (Experiment 5).
 - **Automatic checks must be checked too:** a detector can rank settings correctly and still be wrong on most single cases. Comparing it with human labels showed which detectors to trust (Experiment 6).
 - **Sharper is not better:** the sharpest upscaler invented details that no metric caught; a faithful default and zoomed visual checks matter more (Experiment 7).
+- **A newer model is a trade-off, not an upgrade:** SDXL kept colors and artwork better but edges less strictly, cost 3× the memory, and needed its native resolution to help at all (Experiment 8).
 - **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
@@ -328,6 +363,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - In Experiment 5, RAL→sRGB values are approximations and a wall under real light is not a paint chip, so ΔE also includes lighting. Two rooms have little visible wall (17%), the wall mask covered wood paneling in one room and spilled onto the ceiling in another, and the realism of method D was not rated.
 - In Experiment 6, the human labels are from one person (me), on 25 renders from five rooms and one seed. The detector thresholds are first guesses, and ΔE on the whole image also counts the floor, which img2img changes on purpose.
 - In Experiment 7, the low-resolution inputs were made by shrinking real photos with bicubic resizing; real renders can have other kinds of blur and noise. The diffusion methods were run with one prompt and one setting.
+- In Experiment 8, the ControlNet scale (1.0) and strength (0.6) were chosen for SD 1.5 in Experiment 1; the SDXL Canny ControlNet may follow edges more closely at a higher scale, so part of the edge gap could be a tuning effect. Measuring at 768×432 hides some of SDXL's extra detail.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
 All results are reproducible: running the notebooks again with seed 42 gives the same images and numbers.
@@ -351,7 +387,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 **App locally:** `pip install -r app/requirements.txt` and `python app/app.py` (a GPU is recommended).
 
-**Tech:** Python, PyTorch, Real-ESRGAN (spandrel), LPIPS, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
+**Tech:** Python, PyTorch, SDXL, Real-ESRGAN (spandrel), LPIPS, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
