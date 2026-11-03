@@ -220,6 +220,9 @@ In the earlier experiments I found failures **by looking**. A product team needs
 - **Detectors:** one per failure type: color shift (ΔE), lost structure (edge recall), bent lines (line recall), window and artwork changes (IoU of SegFormer masks), invented or removed objects (object classes that appear or disappear) and layout changes.
 - **Human labels:** I looked at every render next to its original at full size and marked the failures I could see.
 
+![Open-plan room in all five settings](exp6/room4_grid.jpg)
+*Open-plan room. Top: original | canny_only | img2img 0.5. Bottom: img2img 0.7 | img2img 0.9 | inpaint_floor. The marble island turns into wood as strength rises, while inpaint_floor changes only the floor.*
+
 ![Failure flags by setting](exp6/exp6_failures_by_setting.png)
 
 **The detectors ranked the settings correctly.** `inpaint_floor` had the fewest flags (0.2 per render) and `canny_only` the most (2.6), the same order I found by looking in Experiments 1 to 3.
