@@ -197,15 +197,15 @@ Architects order paint by code. If a user asks for *"walls in RAL 7016"*, the re
 | **D: C + correction** | **2.1** | **2.6** | **15 / 15** | 0.17 |
 
 ![Swatch | original | A | B | C | D](exp5/exp5_room1_color1.jpg)
-*RAL 7016 Anthracite grey in the warm-lit room: swatch | original | A | B | C | D. B leaves the walls unchanged, C turns teal under the warm light, D brings it back to grey.*
+*RAL 7016 Anthracite grey in the warm-lit room: swatch | original | A | B | C | D. A and B barely change the walls (ΔE 21.4 and 30.0); C and D are close to the target (ΔE 3.0 and 2.2).*
 
 ![Swatch | original | A | B | C | D](exp5/exp5_room3_color5.jpg)
-*RAL 3012 Beige red: A paints a saturated red patch, B changes nothing, C and D hit the color. The wall mask spilled onto the ceiling, so the ceiling was repainted too.*
+*RAL 3012 Beige red: A paints a saturated red patch, B changes nothing, C and D hit the color (here C, ΔE 1.7, was even closer than D, ΔE 2.0). The wall mask spilled onto the ceiling, so the ceiling was repainted too.*
 
 - **The model does not understand color codes.** With a HEX code the walls mostly kept their original color, and in one room a green code produced red patches. It reads `#89AC76` as text, not as a color.
 - **A color name gets only the direction.** No case came within ΔE 5, parts of the wall often stayed unpainted, and *"beige red terracotta"* became a saturated red.
-- **The color has to be given as pixels.** Starting from walls filled with the exact color (C) put 12 of 15 cases under ΔE 5. The remaining drift came from light: in the warm evening room, anthracite grey turned teal.
-- **A cheap correction closes the gap.** Shifting the mean color (D) put all 15 cases under ΔE 5 and most near the hard-to-see level (ΔE 2). This is a post-processing step of a few lines, with no extra model.
+- **The color has to be given as pixels.** Starting from walls filled with the exact color (C) put 12 of 15 cases under ΔE 5. All 3 misses were in the open-plan room, where the wall mask also covered wood paneling and parts of the ceiling (mean ΔE 5.6 there, 3.0 in the other two rooms).
+- **A cheap correction closes the gap.** Shifting the mean color (D) put all 15 cases under ΔE 5 and most near the hard-to-see level (ΔE 2). This is a post-processing step of a few lines, with no extra model. It helped most where C was furthest off (open-plan room: 5.6 → 1.8); in one case (room 3, beige red) C was already closer than D.
 - **Honest note on D:** the metric compares the mean wall color with the target, and D moves exactly this mean, so its low ΔE is partly guaranteed by design. It shows that a simple correction is enough to hit the code, not that the image looks more realistic; that needs a separate check, such as human ratings.
   
 ## Live demo
