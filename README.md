@@ -26,6 +26,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 - **fp16 is the big win, quantization is not (for SD 1.5).** fp16 halved memory and was 3.8× faster than fp32 at the same quality; LCM-LoRA was 4.3× faster again. 8-bit and 4-bit saved only 7–11% memory, unlike LLMs.
 - **A paint code cannot be given as text.** Asking for a HEX code left the walls almost unchanged (ΔE 26.4) and a color name missed too (ΔE 19.9). Filling the walls with the exact color before generation brought them close (ΔE 3.9), and a simple color correction afterwards put all 15 cases under ΔE 5 (mean 2.1).
 - **Automatic failure checks need human calibration.** On 25 labeled renders, the color detector was reliable (precision 1.00, recall 0.93), but the object detector raised 18 alarms for 8 real cases and the artwork detector missed 9 of 12 changed paintings.
+- **Upscale faithfully by default.** Real-ESRGAN was the most faithful upscaler (best LPIPS 0.205) and 12× faster than the SD x4 upscaler, which looked sharper but invented details such as knitted cushion textures. PSNR even ranked plain bicubic first.
 
 ## Experiments
 
@@ -37,6 +38,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | 4 | What does it cost to run, and what is lost when it runs cheaper (fp32, fp16, 8-bit, 4-bit, LCM-LoRA, CPU offload) | [`04_quantization_modest_hardware.ipynb`](04_quantization_modest_hardware.ipynb) |
 | 5 | Can the model paint a wall in an exact paint code (RAL / HEX)? | [`05_color_accuracy_ral_hex.ipynb`](05_color_accuracy_ral_hex.ipynb) |
 | 6 | Can render failures be found automatically, and how well do the detectors agree with a human? | [`06_failure_set_triage.ipynb`](06_failure_set_triage.ipynb) |
+| 7 | How do upscalers compare, and do they invent details? (bicubic, Real-ESRGAN, SD x4 upscaler, ESRGAN + SD refine) | [`07_upscaling.ipynb`](07_upscaling.ipynb) |
 
 **Where the outputs are:**
 
@@ -48,6 +50,7 @@ In this project I ask for one change (*"light oak wooden floor"*) and measure ho
 | [`exp4/`](exp4/) | Experiment 4 (fp16, quantization, LCM, offload) |
 | [`exp5/`](exp5/) | Experiment 5 (RAL / HEX wall colors) |
 | [`exp6/`](exp6/) | Experiment 6 (failure set, detectors, human labels) |
+| [`exp7/`](exp7/) | Experiment 7 (upscaling) |
 | [`app/`](app/) | The Gradio demo and its screenshots |
 
 Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Colab T4 GPU, 768×432 images, 25 steps, fixed seed (42). One prompt for all methods, so the comparison is fair.
@@ -65,6 +68,8 @@ Setup for all experiments: Stable Diffusion 1.5 + ControlNet, float16, free Cola
 | **Sec/image, peak GPU memory** | Speed and memory on a free T4 GPU (Experiment 2) | lower |
 | **ΔE to target color** | Distance between the mean wall color and the requested paint color (Experiment 5) | lower |
 | **Hit rate** | Share of room × color cases with ΔE to target below 5 (Experiment 5) | higher |
+| **PSNR, LPIPS** | PSNR: pixel-level closeness to the real image. LPIPS: how different the image *looks*, measured by a neural network trained on human judgments (Experiment 7) | higher / lower |
+| **Sharpness ratio** | Sharpness of the result divided by the sharpness of the real image (Laplacian variance); 1.0 = as sharp as reality (Experiment 7) | close to 1 |
 | **Precision / recall of a detector** | Precision: share of its alarms that were real failures. Recall: share of the real failures it caught (Experiment 6, against my labels) | higher |
 
 ## Results
@@ -251,6 +256,39 @@ In the earlier experiments I found failures **by looking**. A product team needs
 - **The overall agreement (85%) hides all of this,** because most render × failure pairs are "no failure" for both me and the detectors. Per-type precision and recall tell the real story.
 - **Labeling needs care too.** My first labels from small grids changed for 9 of the 25 renders after I checked them at full size (a ceiling turned into wood, an armchair became a table). Small changes in shape (leaves, vases) were not counted.
   
+
+### Experiment 7: Upscaling without changing the design
+
+After a render is made, architects often want a bigger, sharper version for print or a presentation. A strong upscaler can **invent details**, and for an architect an invented detail is a design change.
+
+To measure this fairly, I used sharp interior photos (1280×768) as the **ground truth**, shrank them 4× to 320×192, and let each method bring them back. Four methods, one from each main family of upscalers plus a common hybrid:
+
+- **A: Bicubic:** classic resizing, no AI
+- **B: Real-ESRGAN:** a GAN trained to sharpen photos
+- **C: SD x4 upscaler:** a diffusion model made for 4× upscaling
+- **D: Real-ESRGAN + SD refine:** B, then a light Stable Diffusion img2img pass (strength 0.25), the "creative upscale" many render tools use
+
+![Upscaling results](exp7/exp7_upscaling.png)
+
+| Method | PSNR ↑ | SSIM ↑ | LPIPS ↓ | ΔE ↓ | Sharpness ratio | Sec/image | Peak memory |
+|---|---|---|---|---|---|---|---|
+| A: Bicubic | **25.2** | **0.744** | 0.439 | **2.8** | 0.01 | 0.01 | 4.0 GB |
+| **B: Real-ESRGAN** | 24.6 | **0.744** | **0.205** | 3.6 | 0.52 | 2.0 | 4.5 GB |
+| C: SD x4 upscaler | 22.5 | 0.645 | 0.222 | 4.7 | **0.81** | 25.4 | 7.1 GB |
+| D: Real-ESRGAN + SD refine | 21.8 | 0.648 | 0.279 | 5.6 | 0.41 | 10.2 | 6.4 GB |
+
+![Zoomed crops](exp7/exp7_room5_crops.jpg)
+*Zoomed crop at full size: ground truth | A | B | C | D. Bicubic is blurry, Real-ESRGAN keeps the cushions as they are, the SD x4 upscaler gives them a knitted texture that was never there, and the refine step leaves the cushions but adds plaster texture to the wall.*
+
+![Zoomed crops](exp7/exp7_room3_crops.jpg)
+*Ground truth | A | B | C | D. The white sculptures stay the same with Real-ESRGAN; the diffusion methods add a golden object (C) or turn them into bottles (D).*
+
+- **Real-ESRGAN is the best default:** the best LPIPS and SSIM, nothing invented, 2 s per image with 4.5 GB. Fine details look slightly smoothed.
+- **The SD x4 upscaler is the sharpest, but invents details:** knitted cushion textures, new objects next to sculptures, changed flowers in paintings. It is also 12× slower than Real-ESRGAN and needs 7.1 GB.
+- **The refine step was the worst on every quality metric:** in all five rooms it added a plaster-like texture to plain walls and ceilings and changed small objects.
+- **PSNR was misleading:** it ranked the blurry bicubic result first, because blur stays close to the average pixel value.
+- **No metric caught the invented details.** I expected a sharpness ratio above 1 to reveal invented texture, but no method reached the real image's sharpness. Only the zoomed crops showed what changed, the same lesson as Experiment 6.
+
 ## Live demo
 
 The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https://huggingface.co/spaces/Mervecaliskan/keep-the-design). Upload a photo, choose a floor (oak, walnut, parquet, marble, concrete, terracotta) or describe your own, and the app shows the floor mask, the result and the measurements.
@@ -277,6 +315,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - **Metric choice matters:** CLIP scores the whole image and missed the local floor change. A region-based metric (ΔE inside the mask) told the real story.
 - **Text is not enough for exact colors:** a prompt can describe a color but not hit a paint code. Giving the color as pixels and correcting it afterwards worked (Experiment 5).
 - **Automatic checks must be checked too:** a detector can rank settings correctly and still be wrong on most single cases. Comparing it with human labels showed which detectors to trust (Experiment 6).
+- **Sharper is not better:** the sharpest upscaler invented details that no metric caught; a faithful default and zoomed visual checks matter more (Experiment 7).
 - **From notebook to app:** the code that ran in Colab failed on Hugging Face because `torchvision` was missing. A different environment needs its own dependency check.
 
 ## Limits
@@ -288,6 +327,7 @@ The method from Experiment 3 runs as a [Gradio app on Hugging Face Spaces](https
 - One room already had a wooden floor, which lowers its CLIP gain.
 - In Experiment 5, RAL→sRGB values are approximations and a wall under real light is not a paint chip, so ΔE also includes lighting. Two rooms have little visible wall (17%), the wall mask covered wood paneling in one room and spilled onto the ceiling in another, and the realism of method D was not rated.
 - In Experiment 6, the human labels are from one person (me), on 25 renders from five rooms and one seed. The detector thresholds are first guesses, and ΔE on the whole image also counts the floor, which img2img changes on purpose.
+- In Experiment 7, the low-resolution inputs were made by shrinking real photos with bicubic resizing; real renders can have other kinds of blur and noise. The diffusion methods were run with one prompt and one setting.
 - Peak GPU memory (6.5 GB) includes all models loaded in Experiment 2 (three ControlNets, the depth model and CLIP), so a single pipeline needs less. Speed results are from one room.
 
 All results are reproducible: running the notebooks again with seed 42 gives the same images and numbers.
@@ -311,7 +351,7 @@ All results are reproducible: running the notebooks again with seed 42 gives the
 
 **App locally:** `pip install -r app/requirements.txt` and `python app/app.py` (a GPU is recommended).
 
-**Tech:** Python, PyTorch, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
+**Tech:** Python, PyTorch, Real-ESRGAN (spandrel), LPIPS, Hugging Face `diffusers` and `transformers`, Stable Diffusion 1.5, ControlNet (Canny, MLSD, Depth), SegFormer, Depth Anything V2, CLIP, LCM-LoRA, Gradio, Hugging Face Spaces (ZeroGPU), bitsandbytes, OpenCV, scikit-image, pandas, matplotlib.
 
 ## Author
 
